@@ -10,6 +10,9 @@
   library(mlr3measures); library(mlr3tuning);library(paradox);library(DALEX);library(ggplot2)
   library(mlr3hyperband);library(emoa)
   
+  # source plot functions
+  source('scripts/220627 plotfuns.R')
+  
   #  load input data (i changed in excel by adding a '2' to duplicated column names)
   d1 <- fread('data/220627_jinxian_npk_climate.csv',dec=',')
   
@@ -140,7 +143,7 @@
     resampling <- mlr3::rsmp("cv", folds = 3L)
     
     # Set the tuning
-    terminator <- mlr3tuning::trm("run_time", secs = 1 * 60)
+    terminator <- mlr3tuning::trm("run_time", secs = 60 * 60)
     
     # Tune the model ---------------------------------------------------------
 
@@ -190,7 +193,7 @@
                                   y = dt.test$ln_nue, 
                                   label = "model_test_lm")
     
-    # make VIP plot
+    # make VIP plot on training sets
     imp.xgb <- ingredients::feature_importance(explainer.train.xgb, 
                                                loss_function = loss_root_mean_square, 
                                                type = "difference")

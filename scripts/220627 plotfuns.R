@@ -66,7 +66,7 @@ ggplot_hist <- function(...) {
     p <- ggplot(out,aes(x=residual,y=..density..,fill=label)) + 
          geom_histogram(position='identity')  +
          geom_density(aes(x=residual,y=..density..))+
-         facet_wrap(~label)
+         facet_wrap(~label,scales = "free_y")
     
   } else {
     

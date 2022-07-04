@@ -143,7 +143,7 @@
     resampling <- mlr3::rsmp("cv", folds = 3L)
     
     # Set the tuning
-    terminator <- mlr3tuning::trm("run_time", secs = 60 * 60)
+    terminator <- mlr3tuning::trm("run_time", secs = 2 * 60 * 60)
     
     # Tune the model ---------------------------------------------------------
 
@@ -201,13 +201,16 @@
                                                loss_function = loss_root_mean_square, 
                                                type = "difference")
     plot.vip <- ggplot_imp(imp.xgb,imp.lm)
-    ggsave(plot = plot.vip,filename = 'products/plot_res.png')
+    ggsave(plot = plot.vip,filename = 'products/plot_vip_bar.png')
     
     # make a residual plot on test
     res.xgb.test <- auditor::model_residual(explainer.test.xgb)
     res.xgb.train <- auditor::model_residual(explainer.train.xgb)
     res.lm.test <- auditor::model_residual(explainer.test.lm)
     res.lm.train <- auditor::model_residual(explainer.train.lm)  
+    
+    auditor::score_r2(explainer.test.lm)
+    auditor::score_r2(explainer.test.xgb)
     
     plot.res <- ggplot_hist(res.xgb.train,res.xgb.test,res.lm.train,res.lm.test)
     ggsave(plot = plot.res,filename = 'products/plot_res.png')
@@ -230,6 +233,10 @@
                            ale.tni.xgb,ale.tni.lm,ale.ap.xgb,ale.ap.lm)
     ggsave(plot = plot.ale,filename = 'products/plot_ale.png')
    
+    ale.ratio.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'ratio')
+    ale.ratio.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'ratio')
+    ggplot_ale(ale.ratio.xgb,ale.ratio.lm)
+    
     # building global explanations from local explanations
     # build CP profile
     set.seed(1805)
@@ -322,17 +329,66 @@
                     value.name = 'nue')
     
     # plot impact of pH on the averaged soil
-    p1 <- ggplot(dt.pred, aes(x = tni, y = nue,col = model,fill=model)) + 
+    p2 <- ggplot(dt.pred, aes(x = tni, y = nue,col = model,fill=model)) + 
           geom_point(size=5) + 
           geom_smooth(alpha=0.3) +
-          theme_bw() + ggtitle('(a) impact of total N input on NUE') + 
+          theme_bw() + ggtitle('(b) impact of total N input on NUE') + 
           ylim(0,75) + xlim(0,400) + xlab('Total N input (kg / ha') +
           ylab('NUE (%)') + theme(legend.position = c(0.2,0.8),
                                   legend.background = element_rect(fill='white')) + 
           scale_color_manual(name = 'model', values = c('gray85','springgreen4'))
     
     # save
-    ggsave(plot = p1,filename = 'products/pred_nin.png')
+    ggsave(plot = p2,filename = 'products/pred_nin.png')
+
+    # make predictions for total N input in an an averaged situation ----
+    
+    # make prediction data.frame for an average soil from the original input data, but with different pH range
+    # you can also prepare a fake one with a given soil properties needed for the model
+    dt.pred <- d1[,lapply(.SD,mean)][,tpi := NULL]
+    
+    # adapt the pH to illustrate the impact of pH (and all other properties remain equal)
+    dt.pred <- cbind(dt.pred,tpi = seq(0,300,25))
+    
+    # convert pH to z-score
+    dt.pred[,tpi := (tpi - d1.mean[,get('tpi')]) / d1.sd[,get('tpi')]]
+    
+    # set land use as example
+    dt.pred[,ct1_P:= 1]
+    dt.pred[,ct1_PU := 0]
+    dt.pred[,ct1_U := 0]
+    
+    # predict lnNUE, and retransform back to original scale
+    dt.pred[,lnNUEpred := predict(m1,newdata = dt.pred)]
+    dt.pred[,lnNUEpred := lnNUEpred * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
+    dt.pred[,NUE_lm := exp(lnNUEpred) - 10]
+    
+    # predict lnNUE with XGBoost
+    dt.pred[,lnNUExgb := predict(model,newdata = dt.pred)]
+    dt.pred[,lnNUExgb := lnNUExgb * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
+    dt.pred[,NUE_xgboost := exp(lnNUExgb) - 10]
+    
+    # convert pH back to original scale
+    dt.pred[,tpi := tpi * d1.sd[,get('tpi')] + d1.mean[,get('tpi')]]
+    
+    # melt the data.table before plotting
+    dt.pred <- melt(dt.pred[,.(tpi,NUE_lm,NUE_xgboost)],
+                    id.vars = 'tpi', 
+                    variable.name = 'model',
+                    value.name = 'nue')
+    
+    # plot impact of pH on the averaged soil
+    p3 <- ggplot(dt.pred, aes(x = tpi, y = nue,col = model,fill=model)) + 
+      geom_point(size=5) + 
+      geom_smooth(alpha=0.3) +
+      theme_bw() + ggtitle('(c) impact of total P input on NUE') + 
+      ylim(0,75) + xlim(0,300) + xlab('Total P input (kg / ha') +
+      ylab('NUE (%)') + theme(legend.position = c(0.2,0.8),
+                              legend.background = element_rect(fill='white')) + 
+      scale_color_manual(name = 'model', values = c('gray85','springgreen4'))
+    
+    # save
+    ggsave(plot = p3,filename = 'products/pred_pin.png')
     
   # make predictions for available P in an an averaged situation ----
     
@@ -341,7 +397,7 @@
     dt.pred <- d1[,lapply(.SD,mean)][,ln_ap := NULL]
     
     # adapt the pH to illustrate the impact of pH (and all other properties remain equal)
-    dt.pred <- cbind(dt.pred,ln_ap = log(seq(0.5,10,1)))
+    dt.pred <- cbind(dt.pred,ln_ap = log(seq(0.5,200,15)))
     
     # convert pH to z-score
     dt.pred[,ln_ap := (ln_ap - d1.mean[,get('ln_ap')]) / d1.sd[,get('ln_ap')]]
@@ -372,17 +428,17 @@
                     value.name = 'nue')
     
     # plot impact of pH on the averaged soil
-    p1 <- ggplot(dt.pred, aes(x = ap, y = nue,col = model,fill=model)) + 
+    p4 <- ggplot(dt.pred, aes(x = ap, y = nue,col = model,fill=model)) + 
           geom_point(size=5) + 
           geom_smooth(alpha=0.3) +
-          theme_bw() + ggtitle('(a) impact of soil available P on NUE') + 
-          ylim(0,75) + xlim(0,10) + xlab('Soil available P (mg/kg') +
+          theme_bw() + ggtitle('(d) impact of soil available P on NUE') + 
+          ylim(0,75) + xlim(0,200) + xlab('Soil available P (mg/kg') +
           ylab('NUE (%)') + theme(legend.position = c(0.2,0.8),
                                   legend.background = element_rect(fill='white')) + 
           scale_color_manual(name = 'model', values = c('gray85','springgreen4'))
         
     # save
-    ggsave(plot = p1,filename = 'products/pred_ap.png')
+    ggsave(plot = p4,filename = 'products/pred_ap.png')
     
   # make predictions for SOC in an an averaged situation ----
     
@@ -433,4 +489,131 @@
         
     # save
     ggsave(plot = p1,filename = 'products/pred_soc.png')
+    
+  # make prediction data.frame for ratio range
+    
+    # you can also prepare a fake one with a given soil properties needed for the model
+    dt.pred <- d1[,lapply(.SD,mean)][,ratio := NULL]
+    
+    # adapt the pH to illustrate the impact of ratio (and all other properties remain equal)
+    dt.pred <- cbind(dt.pred,ratio = seq(0,80,5))
+    
+    # convert pH to z-score
+    dt.pred[,ratio := (ratio - d1.mean[,get('ratio')]) / d1.sd[,get('ratio')]]
+    
+    # set land use as example
+    dt.pred[,ct1_P:= 1]
+    dt.pred[,ct1_PU := 0]
+    dt.pred[,ct1_U := 0]
+    
+    # predict lnNUE, and retransform back to original scale
+    dt.pred[,lnNUEpred := predict(m1,newdata = dt.pred)]
+    dt.pred[,lnNUEpred := lnNUEpred * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
+    dt.pred[,NUE_lm := exp(lnNUEpred) - 10]
+    
+    # predict lnNUE with XGBoost
+    dt.pred[,lnNUExgb := predict(model,newdata = dt.pred)]
+    dt.pred[,lnNUExgb := lnNUExgb * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
+    dt.pred[,NUE_xgboost := exp(lnNUExgb) - 10]
+    
+    # convert pH back to original scale
+    dt.pred[,ratio := ratio * d1.sd[,get('ratio')] + d1.mean[,get('ratio')]]
+    
+    # melt the data.table before plotting
+    dt.pred <- melt(dt.pred[,.(ratio,NUE_lm,NUE_xgboost)],
+                    id.vars = 'ratio', 
+                    variable.name = 'model',
+                    value.name = 'nue')
+    
+    # plot impact of pH on the averaged soil
+    p5 <- ggplot(dt.pred, aes(x = ratio, y = nue,col = model,fill=model)) + 
+      geom_point(size=5) + 
+      geom_smooth(alpha=0.3) +
+      theme_bw() + ggtitle('(e) impact of organic N input on NUE') + 
+      ylim(0,75) + xlim(1,80) + xlab('ratio organic N input (-)') +
+      ylab('NUE (%)') + theme(legend.position = c(0.2,0.8),
+                              legend.background = element_rect(fill='white')) + 
+      scale_color_manual(name = 'model', values = c('gray85','springgreen4'))
+    
+    # save
+    ggsave(plot = p1,filename = 'products/pred_ratio.png')
+    
+    # require patchwork
+    require(patchwork)
+    theme(legend.position = 'none') 
+    
+    p1a <- p1 + ggtitle('(a) impact of soil pH')
+    p2a <- p2 + ggtitle('(b) impact of N input')
+    p3a <- p3 + ggtitle('(c) impact of P input')
+    p4a <- p4 + ggtitle('(d) impact of available P')
+    p5a <- p5 + ggtitle('(e) impact of organic N input')
+    
+    p6 <- (p1a | p2a) / (p3a | p4a | p5a) + plot_layout(guides = "collect") & theme(legend.position = 'bottom')
+        
+    ggsave(plot = p6,filename = 'products/pred_all.png', width = 25, height = 15, units = 'cm')
+    
+# find the highest NUE that can be achieved for the experimental sites
+    
+    # you can also prepare a fake one with a given soil properties needed for the model
+    dt.pred <- d1[,lapply(.SD,mean)][,c('ph','tci','ln_ap','ratio','tpi','tki','tni','ln_an') := NULL]
+    
+    dt.opt <- data.table(ph = runif(10000,-2,2))
+    dt.opt[, ratio := runif(.N,-3,3)]
+    dt.opt[,ln_ap := rnorm(.N,mean = 0, sd = 3)]
+    dt.opt[,ln_an := ln_ap * (1 + 0.5 * rnorm(.N,mean = 0 , sd = 1))]
+    dt.opt[,tci := rnorm(.N, mean = 0, sd = 3)]
+    dt.opt[,tpi := tci * (1 + 0.5 * rnorm(.N,mean = 0 , sd = 1))]
+    dt.opt[,tni := tci * (1 + 0.5 * rnorm(.N,mean = 0 , sd = 1))]
+    dt.opt[,tki := tci * (1 + 0.5 * rnorm(.N,mean = 0 , sd = 1))]
+    dt.pred <- cbind(dt.pred,dt.opt)
+    
+    # set land use as example
+    dt.pred[,ct1_P:= 0]
+    dt.pred[,ct1_PU := 0]
+    dt.pred[,ct1_U := 1]
+    
+    dt.pred[,ysn := -1]
+    
+    # predict lnNUE, and retransform back to original scale
+    dt.pred[,lnNUEpred := predict(m1,newdata = dt.pred)]
+    dt.pred[,lnNUEpred := lnNUEpred * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
+    dt.pred[,NUE_lm := exp(lnNUEpred) - 10]
+    
+    # predict lnNUE with XGBoost
+    dt.pred[,lnNUExgb := predict(model,newdata = dt.pred)]
+    dt.pred[,lnNUExgb := lnNUExgb * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
+    dt.pred[,NUE_xgboost := exp(lnNUExgb) - 10]
+    
+    hist(dt.pred$NUE_lm,xlim=c(0,100),n=150)
+    quantile(dt.pred$NUE_lm,0.95)
+    hist(dt.pred$NUE_xgboost,n=150)
+    quantile(dt.pred$NUE_xgboost,0.95)
+    
+    dt.pred[,groep := fifelse(NUE_xgboost>quantile(NUE_xgboost,0.95) | 
+                              NUE_lm > quantile(NUE_lm,0.95),'top','rest')]
+    
+    dt.pred[,lapply(.SD,mean), by = groep]
+    
+    a = sample(1:nrow(dt.pred),1000)
+    plot(dt.pred$NUE_lm[a]~dt.pred$ratio[a])
+    
+    # melt the data.table before plotting
+    dt.pred <- melt(dt.pred[,.(ratio,NUE_lm,NUE_xgboost)],
+                    id.vars = 'ratio', 
+                    variable.name = 'model',
+                    value.name = 'nue')
+    
+    # plot impact of pH on the averaged soil
+    p1 <- ggplot(dt.pred, aes(x = ratio, y = nue,col = model,fill=model)) + 
+      geom_point(size=5) + 
+      geom_smooth(alpha=0.3) +
+      theme_bw() + ggtitle('(a) impact of organic N input on NUE') + 
+      ylim(0,75) + xlim(1,80) + xlab('ratio organic N input (-)') +
+      ylab('NUE (%)') + theme(legend.position = c(0.2,0.8),
+                              legend.background = element_rect(fill='white')) + 
+      scale_color_manual(name = 'model', values = c('gray85','springgreen4'))
+    
+    # save
+    ggsave(plot = p1,filename = 'products/pred_ratio.png')
+    
     

@@ -1,0 +1,470 @@
+---
+title: "Re-analysis 2021 for new dataset"
+author: "Xingjuan & Gerard Ros"
+date: "2022-0627"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r loadpackage, include=FALSE, message=FALSE}
+
+  # load packages for correlation plots
+  require(data.table);require(ggplot2)
+
+  #library(corrplot);library(psych)
+
+  # load packages for vegan
+  #library(vegan)
+
+  # load packages for use data.tables and statistical tests
+  #require(data.table);require(mltools); library(agricolae)
+
+  # load packages for data inventory and plotting
+  # require(DataExplorer);require(ggplot2);require(lattice)
+
+  # library for BRT
+  # library(gbm)
+
+```
+
+
+```{r read data, include=TRUE}
+
+  # load input data (i changed in excel by adding a '2' to duplicated column names)
+  d1 <- fread('20210422-JINXIANnpk climate.csv',dec='.')
+  names(d1)
+  str(d1)
+  # make columns with numbers also numeric
+  cols.num <- c('NUEagro','Ysn','Yield',"Noutput",'pH','SOC','TN','AN','TP','AP','TK','AK','Clay','Silt','Sand','TCI','TPI','TKI','TNI','Ratio','PRE','Daynumber','TEM','SSH')
+  d1[,c(cols.num) := lapply(.SD,as.numeric),.SDcols = cols.num]
+  summary(d1)
+```
+## Density distribution of NUEagro
+Evaluate the distribution of NUE. Plot therefore a histogram
+
+```{r Density distribution, include=TRUE}
+
+  par(mfrow=c(1,2))
+  plot(density(d1$NUEagro),col=1,lty=1,lwd=2,main='NUE')
+
+  summary(d1$nueagro)
+
+  hist(d1$Yield, breaks=10, col=2, xlab="",main="Yield")
+```
+```{r data_checks,echo=TRUE}
+
+  # plot histograms
+  DataExplorer::plot_histogram(d1)
+summary(d1$NUEagro)
+summary(d1$Year)
+
+  # visual checks of structure (not shown)
+  #summary(d1);str(d1)
+
+  # apply a log-transformation on a few variables
+  d1[,ln_NUE := log(NUEagro+10)]
+  d1[,ln_SOC := log(SOC)]
+  d1[,ln_TN := log(TN+1)]
+  d1[,ln_AN := log(AN)]
+  d1[,ln_TK := log(TK)]
+  d1[,ln_AK := log(AK)]
+
+  d1[,ln_PRE := log(PRE)]
+  
+   # apply inverse transformation
+  d1[,inv_TP := 1/TP]
+  d1[,ln_AP:= log(AP)]
+  # add categorical variables for type of fertilization
+  d1[,fs := fifelse(Ratio==0 ,'INI',fifelse(Ratio == 100,'ONI','MIX'))]
+  
+  # add categorical variable for soil acidity
+  d1[pH <= 4.5,pHgroup := 'extremely acidic']
+  d1[pH > 4.5 & pH <= 5.5,pHgroup := 'strongly acidic']
+  d1[pH > 5.5 & pH <= 6.5,pHgroup := 'acidic']
+  d1[pH >6.5, pHgroup := 'nonacidic']
+  # add categorical variable for soil acidity
+  d1[Year >=1980 & Year <= 1985,Yeargap := '1980-1985']
+  d1[Year >=1986 & Year <= 1990,Yeargap := '1986-1990']
+  d1[Year >=1991 & Year <= 1995,Yeargap := '1991-1995']
+  d1[Year >=1996 & Year <= 2000,Yeargap := '1996-2000']
+  d1[Year >=2001 & Year <= 2005,Yeargap := '2001-2005']
+  d1[Year >=2006 & Year <= 2010,Yeargap := '2006-2010']
+  d1[Year >=2011& Year <= 2015,Yeargap := '2011-2015']
+  d1[Year >=2016& Year <= 2020,Yeargap := '2016-2020']
+
+  # clean d1 (remove original variables that are transformed for analysis)
+  d2 <- copy(d1)[,c('NUEagro','SOC','AP','AK','AN','TN','TK','TP','PRE') := NULL]
+  
+  # scale all numeric ones to unit variance
+  cols <- colnames(d2[ , .SD, .SDcols = is.numeric])
+  d2[,c(cols) := lapply(.SD,scale),.SDcols = cols]
+  d2[,c(cols) := lapply(.SD,as.numeric),.SDcols = cols]
+  
+  # plot histograms after transformations
+  DataExplorer::plot_histogram(d2)
+  
+```
+
+```{r Correlation analysis, echo=TRUE,eval=TRUE}
+
+  # subset the data.table for the numeric variables
+  cols <- colnames(d2[ , .SD, .SDcols = is.numeric])
+ names(d2)
+  # make new data.table with only numeric ones
+  d3 <- copy(d2)[,c("Sitename","Sitename1", "Year","Treatments","Treatment","inv_TP","ln_TK","ln_TN","Treat","Treats", "PM","ST","CT","CT1","fs","pHgroup","Yeargap", "Yield","Noutput" ) := NULL]
+
+library(ggcorrplot)
+library(ggthemes)
+str(d3)
+corr <- round(cor(d3),1)
+corr
+p.mat <- cor_pmat(d3)
+#corrplot(corr, method = 'number', number.cex = 0.5, diag = FALSE, tl.cex = 1)
+#corrplot(corr, add = TRUE, type = 'upper', method = "circle", diag = FALSE, tl.pos = 'n', cl.pos = 'n')
+
+ggcorrplot(corr,method = "circle",hc.order = TRUE, hc.method ="ward,D",outline.col ="white", ggtheme = theme_bw(), type = "upper",colors=c("#6D9EC1","white","#E46726"),lab=TRUE, lab_size = 2, p.mat =p.mat, insig = "blank",sig.level=TRUE)
+
+
+```
+
+
+```{r lm model, echo=TRUE,eval=FALSE}
+d3 <- copy(d2)
+
+names(d3)
+d3[,c("Sitename","Sitename1","Year",'Treatments','Treatment',"Treat","Treats", "Yield", "Noutput","Sand", "PM","ST","CT" ,"ln_TN" ,"inv_TP","ln_TK","fs","pHgroup" ,"Yeargap" ) := NULL]
+m2 <- lm(ln_NUE~.-1,data=d3)
+summary(m2)
+
+m3 <- lm(ln_NUE ~ CT1 + pH  + I(pH^2) + I(pH^3)+ ln_SOC + 
+    Clay + ln_AP + TNI  + I(Ratio^2) + I(TPI^2) + TPI + Ysn + ln_PRE-1,data=d3)
+summary(m3)
+
+
+
+# evaluate model3 Sand*Silt
+  m3.pred <- predict(m3,newdata=d3[,mget(c('CT1','pH','ln_SOC','Clay',"Silt","Ysn",'ln_AP','ln_PRE','TNI',"Ratio",'TPI'))])
+  
+  # plot some model performance
+  par(mfrow=c(1,2),oma=c(0,0,0,0),mar=c(2,2,2,1))
+  hist(m3$residuals,xlab='Residuals',col='green4',border='green4',n=100,main='Histogram of residuals')
+ #plot(m3$residuals,m3$fitted.values,xlab='Residuals',ylab='Fitted.values',col='green4',main='Residuals vs fitted values')
+  plot(m3.pred~d3$ln_NUE,main='1-to-1 plot',xlab='Observed',ylab='Predicted',col='green4')
+  
+rmse = (mean((m3.pred - d3$ln_NUE)^2))^0.5
+rmse
+
+mu = mean(d3$ln_NUE)
+rse = mean((m3.pred - d3$ln_NUE)^2)/mean((mu-d3$ln_NUE)^2)
+rse
+
+rsquare = 1- rse
+rsquare
+   
+
+# make a new data.frame
+  dt.test <- d1[,mget(c('CT1','ln_SOC','pH','Clay','ln_AP','TNI',"Ratio",'TPI',"Ysn",'ln_PRE'))]
+
+  # helper function to get conversion for zscore (in two directions given choice for conv, either 'zcore','original')
+  hf_zscore <- function(cname,value,dt = d1, method = 'zscore') {
+    
+    hf.dt <- copy(dt)[,get(cname)]
+    if(method=='zscore') { 
+      out <- (value - mean(hf.dt))/sd(hf.dt)
+    } else if(method=='original'){
+      out <- value * sd(hf.dt) + mean(hf.dt)
+    }
+   return(out)
+    
+  }
+  
+  # make prediction data.frame for an average soil from the original input data, but with different pH range
+  # you can also prepare a fake one with a given soil properties needed for the model
+  dt.pred <- d1[,lapply(.SD,mean),.SDcols = c('Clay','ln_SOC',"Silt","Ysn",'ln_AP','ln_PRE','TNI',"Ratio",'TPI','Daynumber',"SSH")]
+  
+  # adapt the pH to illustrate the impact of pH (and all other properties remain equal)
+  dt.pred <- cbind(dt.pred,pH = seq(4,8,0.2))
+  
+  # convert to zscore (needed as input for for lm model) => values become zero, because soil is the mean of d1
+dt.pred[,pH := hf_zscore('pH',pH)]
+  dt.pred[,Clay := hf_zscore('Clay',Clay)]
+  dt.pred[,Silt := hf_zscore('Silt',Silt)]
+  dt.pred[,ln_SOC := hf_zscore('ln_SOC',ln_SOC)]
+  dt.pred[,Ysn := hf_zscore('Ysn',Ysn)]
+  dt.pred[,ln_AP := hf_zscore('ln_AP',ln_AP)]
+  dt.pred[,ln_PRE := hf_zscore('ln_PRE',ln_PRE)]
+  dt.pred[,TNI := hf_zscore('TNI',TNI)]
+  dt.pred[,TPI := hf_zscore('TPI',TPI)]
+  dt.pred[,Ratio := hf_zscore('Ratio',Ratio)]
+  #dt.pred[,SSHg := hf_zscore('SSHg',SSHg)]
+  
+ # dt.pred[,Daynumber := hf_zscore('Daynumber',Daynumber)]  
+  dt.pred[,CT1:= 'PU']
+
+  # predict lnNUE, and retransform back to original scale
+  dt.pred[,lnNUEpred := predict(m3,newdata = dt.pred)]
+  dt.pred[,lnNUEpred := hf_zscore('ln_NUE',lnNUEpred,method='original')]
+  dt.pred[,NUE_pred := exp(lnNUEpred) - 10]
+
+  # convert pH back to original scale
+  dt.pred[,pH := hf_zscore('pH',pH,method = 'original')]
+  
+  # plot impact of pH on the averaged soil
+  ggplot(dt.pred, aes(x = pH, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+        theme_bw() + ggtitle('(a)') + ylim(0,100) + xlim(3,9) + xlab('Soil pH') +
+        ylab('NUE (%)')
+ 
+ dt.pred[, pH := 0]
+  dt.pred[, TNI := seq(0,400,length.out = nrow(dt.pred))]
+  dt.pred[, TNI := hf_zscore('TNI',TNI)]
+  dt.pred[, NUE_pred := exp(hf_zscore('ln_NUE',predict(m3,newdata = dt.pred),method='original'))-10]
+  dt.pred[, TNI := hf_zscore('TNI',TNI,method = 'original')]
+  
+  ggplot(dt.pred, aes(x = TNI, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+        theme_bw() + ggtitle('(b)') + ylim(0,100) + xlim(0,400) + xlab('Total nitrogen fertilizer input (kg/ha)') +
+        ylab('NUE (%)') 
+  
+  dt.pred[, TNI := 0]
+  dt.pred[, Ratio := seq(0,100,length.out = nrow(dt.pred))]
+  dt.pred[, Ratio := hf_zscore('Ratio',Ratio)]
+  dt.pred[, NUE_pred := exp(hf_zscore('ln_NUE',predict(m3,newdata = dt.pred),method='original'))-10]
+  dt.pred[, Ratio := hf_zscore('Ratio',Ratio,method = 'original')]
+ 
+  ggplot(dt.pred, aes(x = Ratio, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+        theme_bw() + ggtitle('(c)') + ylim(0,100) + xlim(0,100) + xlab('Ratio of organice nitrogen fertilizer and tatal nitrogen fertilizer (%)') +
+        ylab('NUE (%)')
+  
+dt.pred[, Ratio:= 0]
+  dt.pred[, TPI := seq(0,400,length.out = nrow(dt.pred))]
+  dt.pred[, TPI := hf_zscore('TPI',TPI)]
+  dt.pred[, NUE_pred := exp(hf_zscore('ln_NUE',predict(m3,newdata = dt.pred),method='original'))-10]
+  dt.pred[, TPI := hf_zscore('TPI',TPI,method = 'original')]
+  
+  ggplot(dt.pred, aes(x = TPI, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+        theme_bw() + ggtitle('(d)') + ylim(0,100) + xlim(0,400) + xlab('Total phosphorus fertilizer input (kg/ha)') +
+        ylab('NUE (%)')  
+  
+  
+#dt.pred[, TPI:= 0]
+  #dt.pred[, ln_PREg := seq(0,100,length.out = nrow(dt.pred))]
+  #dt.pred[, ln_PREg := hf_zscore('ln_PREg',ln_PREg)]
+  #dt.pred[, NUE_pred := exp(hf_zscore('ln_NUE',predict(m3,newdata = dt.pred),method='original'))-10]
+  #dt.pred[, ln_PREg := hf_zscore('ln_PREg',ln_PREg,method = 'original')]
+  
+ #ggplot(dt.pred, aes(x = ln_PREg, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+       # theme_bw() + ggtitle('Impact of ln_PREg on NUE (%)') + ylim(0,100) + xlim(0,100) + xlab('ln_PREg') +
+      # ylab('NUE (%)')
+
+dt.pred[, TPI := 0]
+  dt.pred[, ln_AP := seq(0,6,length.out = nrow(dt.pred))]
+  dt.pred[, ln_AP := hf_zscore('ln_AP',ln_AP)]
+  dt.pred[, NUE_pred := exp(hf_zscore('ln_NUE',predict(m3,newdata = dt.pred),method='original'))-10]
+  dt.pred[, ln_AP := hf_zscore('ln_AP',ln_AP,method = 'original')]
+  
+  ggplot(dt.pred, aes(x = ln_AP, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+        theme_bw() + ggtitle('(e)') + ylim(0,100) + xlim(0,7.5) + xlab('Soil available phosphorus (mg/kg)') +
+        ylab('NUE (%)')
+  
+  dt.pred[, ln_AP := 0]
+  dt.pred[, ln_SOC := seq(0,6,length.out = nrow(dt.pred))]
+  dt.pred[, ln_SOC := hf_zscore('ln_SOC',ln_SOC)]
+  dt.pred[, NUE_pred := exp(hf_zscore('ln_NUE',predict(m3,newdata = dt.pred),method='original'))-10]
+  dt.pred[, ln_SOC := hf_zscore('ln_SOC',ln_SOC,method = 'original')]
+  
+  ggplot(dt.pred, aes(x = ln_SOC, y = NUE_pred)) + geom_point(size=5,colour = 'springgreen4') + 
+        theme_bw() + ggtitle('(f)') + ylim(0,100) + xlim(0,7.5) + xlab('Soil organic carbon (mg/kg)') +
+        ylab('NUE (%)')
+  
+  
+```
+
+
+```{r xgboost,echo=TRUE,message=FALSE, warning=FALSE, results="hide"}
+
+   # load libraries
+  library(data.table);library(binaryLogic);require(ingredients)
+  library(mltools);library(xgboost);library(mlr3);library(mlr3learners)
+  library(mlr3measures); library(mlr3tuning);library(paradox);library(DALEX);library(ggplot2)
+  library(mlr3hyperband);library(emoa)
+  
+  # this one need to be installed from github directly
+  # remotes::install_github("mlr-org/mlr3hyperband")
+   str(d2)
+  # Settings
+  #d5 <- copy(d2)[,c("fs","pHgroup","Sitename","Treatment","Sitename1","ln_TN","ln_TK" ,"inv_TP", "Year","Treatments","Treats","Treat","PM","ST",'Yield','Noutput',"Silt","Sand", "TCI","TPI","CT","Yeargap","ln_SOC","ln_AN","Ysn") := NULL]
+   d5 <- copy(d2)[,c("fs","pHgroup","Sitename","Treatment","Sitename1","ln_TN","ln_TK" ,"inv_TP", "Year","Treatments","Treats","Treat","PM","ST",'Yield','Noutput', "CT","Yeargap") := NULL]
+  names(d2)
+  target <- "ln_NUE"
+  tune_method <- "hyperband"
+ 
+  # function to add little noise to data
+  cols <- colnames(d5[ , .SD, .SDcols = is.numeric])
+  d5[,c(cols) := lapply(.SD,function(x) x + sd(x) * 0.01 * runif(.N,min=-1,max=1)),.SDcols = cols]
+  
+  # load data and remove two variables that are related to nue
+  dt <- copy(d5) 
+  names(dt)
+  str(dt)
+ 
+  # Perform one-hot encoding for categorical variables
+  cols <- c('CT1')
+  dt[,c(cols) := lapply(.SD,as.factor),.SDcols = cols]
+  dt <- mltools::one_hot(dt, cols = c("CT1"))
+  
+  # rename
+  setnames(dt,gsub('-| ','_',colnames(dt)))
+  
+  # Split in train and test set
+  fr.test <- 0.20
+  rows.test <- sample(1:nrow(dt), size = fr.test * nrow(dt), replace = FALSE)
+  rows.train <- which(! 1:nrow(dt) %in% rows.test)
+  dt.train <- dt[rows.train, ]
+  dt.test <- dt[rows.test, ]
+  
+  # Set the task
+  library(mlr3)
+ task.train <- TaskRegr$new(id =target, backend = dt.train, target = target)
+  
+  # Set the learner
+  learner <- lrn("regr.xgboost")
+  
+  # Set the parameters of the learner
+  learner$param_set$values <- list(
+    #eval_metric = "rmsle",
+    verbose = 0,
+    nthread = 8,
+    early_stopping_rounds = 12
+  )
+  
+  ps.tune <- ParamSet$new(list(
+    ParamInt$new("nrounds", lower = 100, upper = 1600, default = 750, tags = "budget"),
+    ParamInt$new("max_depth", lower = 5, upper = 20, default = 12),
+    ParamDbl$new("min_child_weight", lower = 1, upper = 5, default = 1),
+    ParamDbl$new("subsample", lower = 0.5, upper = 1, default = 0.5),
+    ParamDbl$new("colsample_bytree", lower = 0.5, upper = 1, default = 0.5),
+    ParamDbl$new("eta", lower = 2^-9, upper = 2^-3, default = 2^-5),
+    ParamDbl$new("gamma", lower = 0, upper = 5, default = 0)
+  ))
+  # Set the measures
+  measures <- list(msr("regr.rmse"), msr("time_train"))
+  
+  # Set the resampling
+  resampling <- rsmp("cv", folds = 3L)
+  
+  # Set the tuning
+  terminator <- trm("run_time", secs = 60 * 60)
+  
+  # Tune the model ---------------------------------------------------------
+    if (tune_method == "random") {
+    
+    tuner <- mlr3tuning::tnr("random_search")
+    
+    at <- AutoTuner$new(
+      learner = learner,
+      resampling = resampling,
+      measures = measures,
+      tune_ps = ps.tune,
+      terminator = terminator,
+      tuner = tuner
+    )
+    at$train(task = task.train)
+    
+    model <- at$model$learner
+    
+  } else if (tune_method == "hyperband") {
+    
+    
+    tuner = tnr("hyperband", eta = 2L)
+    
+    inst <- TuningInstanceSingleCrit$new(
+      task = task.train,
+      learner = learner,
+      resampling = resampling,
+      measure = msr("regr.rmse"),
+      search_space = ps.tune,
+      terminator = terminator
+    )
+    
+    result <- tuner$optimize(inst)
+    
+    # Set the best hyperparameters
+    learner$param_set$values <- inst$result_learner_param_vals
+    
+    # Train the model
+    model <- learner$train(task = task.train)
+  }
+  
+  # Interpret the model -----------------------------------------------------
+
+  custom_predict <- function(model, newdata) {
+    x <- predict(model, newdata = newdata)
+    return(x)
+  }
+  
+  # Create the explainer
+  explainer.train <- explain(model, data = as.data.frame(dt.train[, .SD, .SDcols = !c(target)]), y = dt.train$ln_NUE, label = "model_train")
+  explainer.test <- explain(model, data = as.data.frame(dt.test[, .SD, .SDcols = !c(target)]), y = dt.test$ln_NUE, label = "model_test")
+  
+
+```
+```{r mlplots,echo=FALSE}
+
+ # Explore model performance
+  performance <- model_performance(explainer.test)
+  plot(performance) #+ ggsave(filename = "06 output/perfomance.png")
+  plot(performance, geom = "boxplot") #+ ggsave(filename = "06 output/perfomance_bx.png")
+  
+
+```
+```{r Explore residuals,echo=FALSE}
+
+ # Explore residuals
+  residuals <- auditor::model_residual(explainer.test)
+  #auditor::plot_residual_density(residuals) #+ ggsave(filename = "06 output/residual_density.png")
+  #auditor::plot_prediction(residuals, abline = TRUE, smooth = TRUE) #+ ggsave(filename = "06 output/prediction.png")
+   
+  #auditor::plot_autocorrelation(residuals) # + ggsave(filename = "06 output/autocorrelation.png")
+  #par(mfrow=c(1,3),oma=c(0,0,0,0),mar=c(3,3,3,1))
+  hist(residuals$`_residuals_`,col='green4',border='green4',n=100,main='histogram of residuals')
+  plot(residuals$`_residuals_`,residuals$`_y_`,col='green4',main='residuals vs fitted values')
+  plot(residuals$`_y_`~residuals$`_y_hat_`,main='1-to-1plot',xlab='observed',ylab='predicted',col='green4')
+  rmse = (mean((residuals$`_y_hat_` - residuals$`_y_`)^2))^0.5
+  rmse
+  mu = mean(residuals$`_y_`)
+  rse = mean((residuals$`_y_hat_` - residuals$`_y_`)^2)/mean((mu-residuals$`_y_`)^2)
+  rse
+  rsquare = 1- rse
+  rsquare
+  
+```
+
+Plot the feature importance
+```{r plotfeatureimportance,echo=FALSE}
+  
+# Explore the feature importance
+  importance <- ingredients::feature_importance(explainer.train, loss_function = loss_root_mean_square, type = "difference")
+  plot(importance) #+ ggsave(filename = "06 output/importance.png", height = 10, width = 7)
+  importance <- importance[! importance$variable %in% c("_baseline_", "_full_model_"), ]
+  setorder(importance, -dropout_loss)
+  importance.top <- unique(as.character(importance$variable))[1:10]
+  
+```
+
+```{r ale,echo=TRUE}
+ 
+# Explore the ALE
+  for (this.feat in importance.top) {
+    message(paste0("Plotting ALE of ", this.feat))
+    responses <- ingredients::accumulated_dependency(explainer.train, this.feat)
+    print(plot(responses)) 
+    #print(plot(responses) + ggsave(filename = paste0("06 output/ale_", this.feat, ".png")))
+  }
+   
+```
+

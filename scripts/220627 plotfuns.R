@@ -1,5 +1,7 @@
 # plot multiple VIP
-ggplot_imp <- function(...) {
+ggplot_imp <- function(...,ftype = 'bar') {
+  
+  # combine objects
   obj <- list(...)
   
   # retreive the metric name for x axis
@@ -11,31 +13,59 @@ ggplot_imp <- function(...) {
   
   # combine the data of the inputs
   full_vip <- rbindlist(obj)[variable != "_baseline_"]
+ 
+  # rename the labels for heading figure
+  full_vip[grepl('_xgb',label), label := 'XGBoost model']
+  full_vip[grepl('_lm',label), label := 'LM model']
   
-  # estimate mean
+  # estimate mean per model
   perm_vals <- full_vip[variable != '_full_model_',list(dropout_loss = mean(dropout_loss)),by='label']
+  
+  # estimate mean model and paramater
+  parm_mean <- full_vip[variable != '_full_model_',list(dropout_loss = mean(dropout_loss)),
+                        by=c('label','variable')]
   
   # order the variables
   p <- full_vip[variable != "_full_model_"]
+  
+ 
+  # sort the variables and make start plot
   p <- p[order(variable,-dropout_loss)] |> ggplot(aes(dropout_loss, variable)) 
   
   if(length(obj) > 1) {
     p <- p + 
       facet_wrap(vars(label)) +
       geom_vline(data = perm_vals, aes(xintercept = dropout_loss, color = label),
-                 size = 1.4, lty = 2, alpha = 0.7) +
-      geom_boxplot(aes(color = label, fill = label), alpha = 0.2)
+                 size = 1, lty = 2, alpha = 0.7)
+      
+      if(ftype == 'bar'){
+        p <- p + geom_col(data = parm_mean,
+                 aes(x = dropout_loss, y =variable, color = label,fill=label),alpha = 0.2)
+        
+      } else {
+        p <- p + geom_boxplot(aes(color = label, fill = label), alpha = 0.2)  
+      }
+      
   } else {
     p <- p + 
       geom_vline(data = perm_vals, aes(xintercept = dropout_loss),
-                 size = 1.4, lty = 2, alpha = 0.7) +
-      geom_boxplot(fill = "#91CBD765", alpha = 0.4)
+                 size = 1, lty = 2, alpha = 0.7) 
+      if(ftype == 'bar'){
+        p <- p + geom_col(data = parm_mean,
+                 aes(x = dropout_loss, y =variable,fill="#91CBD765"),alpha = 0.2)
+        
+      } else {
+        p <- p + geom_boxplot(fill = "#91CBD765", alpha = 0.4)  
+      }
+      
     
   }
   p <- p + 
     labs(x = metric_lab, 
          y = NULL,  fill = NULL,  color = NULL) + theme_bw() +
-      theme(legend.position = "none")
+      theme(legend.position = "none",
+            #panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank())
   
   
   return(p)

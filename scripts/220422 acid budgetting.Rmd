@@ -1,44 +1,33 @@
 ---
-title: "20220411 Acid budget for 4 sites"
-author: "Xingjuan"
+title: "Acid budget for 4 sites"
+author: "Xingjuan Zhu & Gerard Ros"
 date: "2022/4/13"
 output: html_document
 ---
 ```{r loadpackage, include=FALSE, message=FALSE}
 
-  # load packages for correlation plots
+  # load packages
+  require(data.table);require(ggplot2)
 
-
-  library(corrplot);library(psych)
-
-  # load packages for vegan
-  library(vegan)
-
-  # load packages for use data.tables and statistical tests
-  require(data.table);require(mltools); library(agricolae)
-
-  # load packages for data inventory and plotting
-  require(DataExplorer);require(ggplot2);require(lattice)
-
-  # library for BRT
-  library(gbm)
 
 ```
 
 
 ```{r BUDGET CALCULATION, include=TRUE}
 
-# require packages
-require(data.table)
-
 # source the script with helper funs
 #source('220218 element balance helper funs.R')
 
 # read in the input data
-d1 <- readxl::read_xlsx('Data for other 4 sites pH higher than 7.xlsx')
+d1 <- readxl::read_xlsx('../data/Data for other 4 sites pH higher than 7.xlsx')
 d1 <- as.data.table(d1)
 
-# update the fertilizer data (all in kg / ha)
+# add missing variables (to be updated by Xinghuan)
+d1[, DepK := 0.02]
+d1[, DepCa := 0.16]
+d1[, DepMg := 0.04]
+
+# update the fertilizer data (all in kg Element/ ha)
 # P fertilizer is calcium superphosphate and K fertilizer is KCl
 d1[,Pin_i := P2O5in_i * 62 / 142]
 d1[,Sin_i := P2O5in_i * 13 / 17]
@@ -46,38 +35,25 @@ d1[,Cain_i := P2O5in_i * 20 / 17]
 d1[,Kin_i := K2Oin_i * 0.83]
 d1[,Clin_i := K2Oin_i * 45.3 / 60]
 
-
 # calculate crop nutrient uptake of crop 1 (wheat) for N, P and K for wheat (kg / ha)
-
-
 d1[,C1_N := c1_yield_grain * N_c1_grain * 0.001 + c1_yield_straw * N_c1_straw * 0.001]
 d1[,C1_P := c1_yield_grain * P_c1_grain * 0.001 + c1_yield_straw * P_c1_straw * 0.001]
 d1[,C1_K := c1_yield_grain * K_c1_grain * 0.001 + c1_yield_straw * K_c1_straw * 0.001]
 d1[,C1_Ca := c1_yield_grain * Ca_c1_grain * 0.001 + c1_yield_straw *  Ca_c1_straw * 0.001]
-d1[,C1_Mg := c1_yield_grain *Mg_c1_grain * 0.001 + c1_yield_straw *  Mg_c1_straw * 0.001]
+d1[,C1_Mg := c1_yield_grain * Mg_c1_grain * 0.001 + c1_yield_straw *  Mg_c1_straw * 0.001]
 d1[,C1_Na := c1_yield_grain * Na_c1_grain * 0.001 + c1_yield_straw *  Na_c1_straw * 0.001]
 d1[,C1_S := c1_yield_grain * S_c1_grain * 0.001 + c1_yield_straw *  S_c1_straw * 0.001]
-d1[,C1_Cl := c1_yield_grain * Cl_c1_grain * 0.001 + c1_yield_straw *  Cl_c1_straw * 0.001]# calculate crop nutrient uptake for Ca, Mg, Na, and S (kg / ha) using the helper function sce to select the correct composition
-#d1[,C1_Ca := c1_yield_grain * sce('C1','grain','Ca') + c1_yield_straw * sce('C1','straw','Ca')]
-#d1[,C1_Mg := c1_yield_grain * sce('C1','grain','Mg') + c1_yield_straw * sce('C1','straw','Mg')]
-#d1[,C1_Na := c1_yield_grain * sce('C1','grain','Na') + c1_yield_straw * sce('C1','straw','Na')]
-#d1[,C1_S := c1_yield_grain * sce('C1','grain','S') + c1_yield_straw * sce('C1','straw','S')]
-#d1[,C1_Cl := c1_yield_grain * sce('C1','grain','Cl') + c1_yield_straw * sce('C1','straw','Cl')]
+d1[,C1_Cl := c1_yield_grain * Cl_c1_grain * 0.001 + c1_yield_straw *  Cl_c1_straw * 0.001]
 
 # calculate crop nutrient uptake of crop 2 (maize) for N, P and K for wheat (kg / ha)
 d1[,C2_N := c2_yield_grain * N_c2_grain * 0.001 + c2_yield_straw * N_c2_straw * 0.001]
 d1[,C2_P := c2_yield_grain * P_c2_grain * 0.001 + c2_yield_straw * P_c2_straw * 0.001]
 d1[,C2_K := c2_yield_grain * K_c2_grain * 0.001 + c2_yield_straw * K_c2_straw * 0.001]
 d1[,C2_Ca := c2_yield_grain * Ca_c2_grain * 0.001 + c2_yield_straw *  Ca_c2_straw * 0.001]
-d1[,C2_Mg := c2_yield_grain*Mg_c2_grain * 0.001 + c2_yield_straw *  Mg_c2_straw * 0.001]
+d1[,C2_Mg := c2_yield_grain * Mg_c2_grain * 0.001 + c2_yield_straw *  Mg_c2_straw * 0.001]
 d1[,C2_Na := c2_yield_grain  * Na_c2_grain * 0.001 + c2_yield_straw *  Na_c2_straw * 0.001]
 d1[,C2_S := c2_yield_grain * S_c2_grain * 0.001 + c2_yield_straw *  S_c2_straw * 0.001]
 d1[,C2_Cl := c2_yield_grain * Cl_c2_grain * 0.001 + c2_yield_straw *  Cl_c2_straw * 0.001]
-#d1[,C2_Ca := c2_yield_grain * sce('C2','grain','Ca') + c2_yield_straw * sce('C2','straw','Ca')]
-#d1[,C2_Mg := c2_yield_grain * sce('C2','grain','Mg') + c2_yield_straw * sce('C2','straw','Mg')]
-#d1[,C2_Na := c2_yield_grain * sce('C2','grain','Na') + c2_yield_straw * sce('C2','straw','Na')]
-#d1[,C2_S := c2_yield_grain * sce('C2','grain','S') + c2_yield_straw * sce('C2','straw','S')]
-#d1[,C2_Cl := c2_yield_grain * sce('C2','grain','Cl') + c2_yield_straw * sce('C2','straw','Cl')]
 
 # calculate crop nutrient uptake of both crops (in kg / ha)
 d1[,Up_N := C1_N + C2_N]
@@ -89,12 +65,12 @@ d1[,Up_Na := C1_Na + C2_Na]
 d1[,Up_S := C1_S + C2_S]
 d1[,Up_Cl := C1_Cl + C2_Cl]
 
-# calculate  N,P,s,cl  Uptake (eq / m2 / year)
-d1[,Up_eq_NH4 := Up_N /2 / 140]
-d1[,Up_eq_NO3 := Up_N /2 / 140]
+# calculate  N,P,S,Cl  Uptake (eq / m2 / year) assuming 50% taken up as NO3 and 50% as NH4
+d1[,Up_eq_NH4 := Up_N * 0.5 / 140]
+d1[,Up_eq_NO3 := Up_N * 0.5 / 140]
 d1[,Up_eq_P := Up_P / 310]
-d1[,Up_eq_S := Up_S/320*2]
-d1[,Up_eq_Cl := Up_Cl/355]
+d1[,Up_eq_S := Up_S / 320 * 2]
+d1[,Up_eq_Cl := Up_Cl / 355]
 
 # calculate Base Cation Uptake (eq / m2 / year)
 d1[,Up_eq_K := Up_K / 390.983]
@@ -102,58 +78,80 @@ d1[,Up_eq_Ca := Up_Ca / 400.78 * 2]
 d1[,Up_eq_Mg := Up_Mg / 243.05 * 2]
 d1[,Up_eq_Na := Up_Na / 229.89769]
 
-# N balance (eq / m2 / year)
-d1[,AVrate := 0.0612 * Ph - 0.197]
-d1[,NH4in_eq_i := (Nin_i - Nin_i * AVrate)*0.5/140]
-d1[,NO3in_eq_i := (Nin_i - Nin_i * AVrate)*0.5/140]
-d1[,NH4in_eq_o := (Nin_o - Nin_o * AVrate)*0.5/140]
-d1[,NO3in_eq_o := (Nin_o - Nin_o * AVrate)*0.5/140]
-d1[,N_eq_fix := Nfix/140]
-d1[,N_sur := Nin_i + Nin_o + Nfix + (DepNH4+DepNO3)*140 - Up_N - Nin_i * AVrate - Nin_o * AVrate ]
-d1[,N_eq_sur := N_sur/140 ]
+# N balance
+
+  # ammonia losses depending on pH
+  d1[,AVrate := 0.0612 * Ph - 0.197]
+
+  # n inorganic inputs, corrected for ammonia losses, split over ammonium and nitrate
+  d1[,NH4in_eq_i := (1 - AVrate) * Nin_i * 0.5 / 140]
+  d1[,NO3in_eq_i := (1 - AVrate) * Nin_i * 0.5 / 140]
+  
+  # n inorganic inputs, corrected for ammonia losses, split over ammonium and nitrate
+  d1[,NH4in_eq_o := (1 - AVrate) * Nin_o * 0.5 / 140]
+  d1[,NO3in_eq_o := (1 - AVrate) * Nin_o * 0.5 / 140]
+
+  # nitrogen fixation
+  d1[,N_eq_fix := Nfix / 140]
+
+  # nitrogen surplus corrected for nh3 (in kg N /ha and eq / ha)
+  d1[,N_sur := (1 - AVrate) * (Nin_i + Nin_o) + Nfix + (DepNH4 + DepNO3) * 140 - Up_N ]
+  d1[,N_eq_sur := N_sur / 140 ]
  
 
-
 # P balance (eq / m2 / year)
-d1[,Pin_eq_i := Pin_i/310]
-d1[,Pin_eq_o := Pin_o/310]
-d1[,Up_eq_P := Up_P/310]
-d1[,P_sur := Pin_i + Pin_o + DepP*310 - Up_P]
-d1[,P_eq_sur := P_sur/310 ]
+
+  # convert P inputs, uptake and surplus
+  d1[,Pin_eq_i := Pin_i / 310]
+  d1[,Pin_eq_o := Pin_o / 310]
+  d1[,Up_eq_P := Up_P / 310]
+  d1[,P_sur := Pin_i + Pin_o + DepP * 310 - Up_P]
+  d1[,P_eq_sur := P_sur/310 ]
    
 # k balance (eq / m2 / year)  
 
-d1[,Kin_eq_i := Kin_i/390]
-d1[,Kin_eq_o := Kin_o/390]
-d1[,Up_eq_K := Up_K/390]
-#d1[,K_sur := Kin_i + Kin_o + DepK*390 - Up_K]
-#d1[,K_eq_sur := K_sur/390 ]
+  # convert K inputs, uptake and surplus
+  d1[,Kin_eq_i := Kin_i / 390]
+  d1[,Kin_eq_o := Kin_o / 390]
+  d1[,Up_eq_K := Up_K / 390]
+  d1[,K_sur := Kin_i + Kin_o + DepK * 390 - Up_K]
+  d1[,K_eq_sur := K_sur / 390 ]
 
 # S balance (eq / m2 / year)
 
-d1[,Sin_eq_i := Sin_i/320*2]
-d1[,Sin_eq_o := Sin_o/320*2]
-d1[,Up_eq_S := Up_S/320*2]
-d1[,S_sur := Sin_i + Sin_o + DepSO4/2*320 - Up_S]
-d1[,S_eq_sur := S_sur/320*2 ]
-d1[,S_eq_le := Sin_eq_i + Sin_eq_o + DepSO4 - Up_eq_S]
-
+  # convert S inputs, uptake and surplus
+  d1[,Sin_eq_i := Sin_i/320*2]
+  d1[,Sin_eq_o := Sin_o/320*2]
+  d1[,Up_eq_S := Up_S/320*2]
+  d1[,S_sur := Sin_i + Sin_o + DepSO4/2*320 - Up_S]
+  d1[,S_eq_sur := S_sur/320*2 ]
+  d1[,S_eq_le := Sin_eq_i + Sin_eq_o + DepSO4 - Up_eq_S]
 
 # Cl balance (eq / m2 / year)  
-d1[,Clin_eq_i := Clin_i/355]
-d1[,Clin_eq_o := Clin_o/355]
-d1[,Up_eq_Cl := Up_Cl/355]
-d1[,Cl_sur := Clin_i + Clin_o + DepCl*355 - Up_Cl]
-d1[,Cl_eq_sur := Cl_sur/355 ]
-d1[,Cl_eq_le := Clin_eq_i + Clin_eq_o + DepCl - Up_eq_Cl]
+  
+  # convert Cl inputs, uptake and surplus
+  d1[,Clin_eq_i := Clin_i/355]
+  d1[,Clin_eq_o := Clin_o/355]
+  d1[,Up_eq_Cl := Up_Cl/355]
+  d1[,Cl_sur := Clin_i + Clin_o + DepCl*355 - Up_Cl]
+  d1[,Cl_eq_sur := Cl_sur/355 ]
+  d1[,Cl_eq_le := Clin_eq_i + Clin_eq_o + DepCl - Up_eq_Cl]
 
 # BC balance (eq / m2 / year) 
-d1[,Cain_eq_i := Cain_i/400.78 * 2]
-d1[,Cain_eq_o := Cain_o/400.78 * 2]
-d1[,Mgin_eq_o := Mgin_o/243.05 * 2]
-d1[,Nain_eq_o := Nain_o/229.89769]
-d1[,BC_eq_le := - CaCO3_decrease_eq + Cain_eq_i + Cain_eq_o + Mgin_eq_o + Nain_eq_o + Kin_eq_i + Kin_eq_o +DepBC  + BC_we - Up_eq_K - Up_eq_Ca - Up_eq_Mg - Up_eq_Na -BC_poolchange]#for sites with high pH
-d1[,BC_eq_sur := DepBC+ Cain_eq_i + Kin_eq_i +Cain_eq_o + Mgin_eq_o + Kin_eq_o + Nain_eq_o - Up_eq_Na - Up_eq_Ca -Up_eq_Mg - Up_eq_K + CaCO3_decrease_eq]#for sites with high pH
+
+  # calculate Ca, Mg and inputs from organic and inorganic fertilizers
+  d1[,Cain_eq_i := Cain_i / 400.78 * 2]
+  d1[,Cain_eq_o := Cain_o / 400.78 * 2]
+  d1[,Mgin_eq_o := Mgin_o / 243.05 * 2]
+  d1[,Nain_eq_o := Nain_o / 229.89769]
+  
+  # add BC leaching for sites with high pH
+  d1[,BC_eq_le := Cain_eq_i + Cain_eq_o - CaCO3_decrease_eq +  
+                  Mgin_eq_o + Nain_eq_o + Kin_eq_i + Kin_eq_o + 
+                  DepBC  + BC_we - 
+                  Up_eq_Ca - Up_eq_Mg - Up_eq_K - Up_eq_Na - 
+                  BC_poolchange]
+d1[,BC_eq_sur := DepBC+ Cain_eq_i + Kin_eq_i +Cain_eq_o + Mgin_eq_o + Kin_eq_o + Nain_eq_o - Up_eq_Na - Up_eq_Ca -Up_eq_Mg - Up_eq_K + CaCO3_decrease_eq]
 
 
 # H balance (eq / m2 / year) 

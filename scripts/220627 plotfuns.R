@@ -16,7 +16,29 @@ ggplot_imp <- function(...,ftype = 'bar') {
  
   # rename the labels for heading figure
   full_vip[grepl('_xgb',label), label := 'XGBoost model']
-  full_vip[grepl('_lm',label), label := 'LM model']
+  full_vip[grepl('_lm|_glm',label), label := 'GLM model']
+  
+  # rename variables
+  full_vip[variable == 'temm', variable := 'temperature']
+  full_vip[variable == 'ln_tn', variable := 'n-total']
+  full_vip[variable == 'tp', variable := 'p-total']
+  full_vip[variable == 'ratio', variable := 'norg fraction']
+  full_vip[variable == 'ln_pre', variable := 'precipitation']
+  full_vip[variable == 'ln_ak', variable := 'available k']
+  full_vip[variable == 'ln_ap', variable := 'available p']
+  full_vip[variable == 'ln_an', variable := 'available n']
+  full_vip[variable == 'sshg', variable := 'sunshine hours']
+  full_vip[variable == 'ln_soc', variable := 'soc']
+  full_vip[variable == 'ln_tk', variable := 'k-total']
+  full_vip[variable == 'ct1_P', variable := 'paddy soils']
+  full_vip[variable == 'ct1_U', variable := 'upland soils']
+  full_vip[variable == 'ct1_PU', variable := 'mixed soils']
+  full_vip[variable == 'daynumber', variable := 'ndays rain events']
+  full_vip[variable == 'tpi', variable := 'p input']
+  full_vip[variable == 'tni', variable := 'n input']
+  full_vip[variable == 'tki', variable := 'k input']
+  full_vip[variable == 'tci', variable := 'c input']
+  full_vip[variable == 'ysn', variable := 'duration']
   
   # estimate mean per model
   perm_vals <- full_vip[variable != '_full_model_',list(dropout_loss = mean(dropout_loss)),by='label']
@@ -65,7 +87,8 @@ ggplot_imp <- function(...,ftype = 'bar') {
          y = NULL,  fill = NULL,  color = NULL) + theme_bw() +
       theme(legend.position = "none",
             #panel.grid.major = element_blank(), 
-            panel.grid.minor = element_blank())
+            panel.grid.minor = element_blank()
+            )
   
   
   return(p)
@@ -131,6 +154,7 @@ ggplot_onetoone <- function(...) {
   }
   out <- rbindlist(out)
   out <- out[order(label)]
+  out[,label := gsub('_lm','_glm',label)]
   
   # make a residual plot
   if(length(obj) > 1){ 
@@ -195,9 +219,12 @@ ggplot_ale <- function(...){
   }
  
   p <- p + theme_bw() + theme(legend.position = 'bottom') + 
-    ylab('Change in average predicted NUE (scaled to unit variance)') + 
+    ylab('Change in average predicted NUE\n(scaled to unit variance)') + 
     xlab('Change in explanatory variable (scaled to unit variance)') +
-    xlim(xaxmin,xaxmax)
+    xlim(xaxmin,xaxmax) +
+    theme(axis.text.x = element_text(size = 10),
+          axis.text.y = element_text(size = 10),
+          axis.title = element_text(size=10))
   
   return(p)
 }

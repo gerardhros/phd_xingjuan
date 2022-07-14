@@ -187,11 +187,11 @@
     explainer.train.lm <- explain(model = m1, 
                                    data = as.data.frame(dt.train[, .SD, .SDcols = cols.lm]), 
                                    y = dt.train$ln_nue, 
-                                   label = "model_train_lm")
+                                   label = "model_train_glm")
     explainer.test.lm <- explain(model = m1, 
                                   data = as.data.frame(dt.test[, .SD, .SDcols = cols.lm]), 
                                   y = dt.test$ln_nue, 
-                                  label = "model_test_lm")
+                                  label = "model_test_glm")
     
     # make VIP plot on training sets
     imp.xgb <- ingredients::feature_importance(explainer.train.xgb, 
@@ -201,7 +201,7 @@
                                                loss_function = loss_root_mean_square, 
                                                type = "difference")
     plot.vip <- ggplot_imp(imp.xgb,imp.lm)
-    ggsave(plot = plot.vip,filename = 'products/plot_vip_bar.png')
+    ggsave(plot = plot.vip,filename = 'products/plot2_vip_bar.png',width = 13.16, height = 8.90, units='cm')
     
     # make a residual plot on test
     res.xgb.test <- auditor::model_residual(explainer.test.xgb)
@@ -213,11 +213,17 @@
     auditor::score_r2(explainer.test.xgb)
     
     plot.res <- ggplot_hist(res.xgb.train,res.xgb.test,res.lm.train,res.lm.test)
-    ggsave(plot = plot.res,filename = 'products/plot_res.png')
+    ggsave(plot = plot.res,filename = 'products/plot2_res.png',width = 13.16, height = 8.90, units='cm')
     
     # make a 1-to-1 plot of both regressions
     plot.mp <- ggplot_onetoone(res.xgb.train,res.xgb.test,res.lm.train,res.lm.test)
-    ggsave(plot = plot.mp,filename = 'products/plot_1-to-1.png')
+    plot.mp <- ggplot_onetoone(res.xgb.test,res.lm.test)
+    ggsave(plot = plot.mp,filename = 'products/plot3_1-to-1.png',width = 10.16, height = 8.90, units='cm')
+    
+    require(patchwork)
+    pcombi <- plot.vip + plot.mp
+    ggsave(plot = pcombi,filename = 'products/plot2_combi.png',width = 23, height = 8.90, units='cm')
+    
     
     # plot ALE-plots
     ale.clay.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'clay')
@@ -228,10 +234,20 @@
     ale.tni.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'tni')
     ale.ap.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'ln_ap')
     ale.ap.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'ln_ap')
-  
+    ale.soc.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'ln_soc')
+    ale.soc.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'ln_soc')
+    ale.pre.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'ln_pre')
+    ale.pre.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'ln_pre')
+    #ale.tem.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'temm')
+    ale.ratio.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'ratio')
+    ale.ratio.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'ratio')
+    
+    
     plot.ale <- ggplot_ale(ale.clay.xgb,ale.clay.lm,ale.ph.xgb,ale.ph.lm,
-                           ale.tni.xgb,ale.tni.lm,ale.ap.xgb,ale.ap.lm)
-    ggsave(plot = plot.ale,filename = 'products/plot_ale.png')
+                           ale.tni.xgb,ale.tni.lm,ale.ap.xgb,ale.ap.lm,
+                           ale.soc.xgb,ale.soc.lm, ale.pre.xgb,ale.pre.lm,
+                           ale.ratio.xgb,ale.ratio.lm)
+    ggsave(plot = plot.ale,filename = 'products/plot2_ale.png',width = 13.16, height = 10.90, units='cm')
    
     ale.ratio.xgb <- ingredients::accumulated_dependency(explainer.train.xgb, 'ratio')
     ale.ratio.lm <- ingredients::accumulated_dependency(explainer.train.lm, 'ratio')
@@ -559,7 +575,7 @@
     
     dt.opt <- data.table(ph = runif(10000,-2,2))
     dt.opt[, ratio := runif(.N,-3,3)]
-    dt.opt[,ln_ap := rnorm(.N,mean = 0, sd = 3)]
+    dt.opt[,ln_ap := rnorm(.N,mean = 0, sd = 2)]
     dt.opt[,ln_an := ln_ap * (1 + 0.5 * rnorm(.N,mean = 0 , sd = 1))]
     dt.opt[,tci := rnorm(.N, mean = 0, sd = 3)]
     dt.opt[,tpi := tci * (1 + 0.5 * rnorm(.N,mean = 0 , sd = 1))]
@@ -584,10 +600,22 @@
     dt.pred[,lnNUExgb := lnNUExgb * d1.sd[,get('ln_nue')] + d1.mean[,get('ln_nue')]]
     dt.pred[,NUE_xgboost := exp(lnNUExgb) - 10]
     
+    # add test
+    dt.pred[, nclass := fifelse(NUE_lm > quantile(NUE_lm,0.90),1,0)]
+    
+    dt.eval <- dt.pred[,lapply(.SD,mean),by=nclass]
+    dt.eval[,ph := ph * d1.sd[,get('ph')] + d1.mean[,get('ph')]]
+    dt.eval[,ratio := ratio * d1.sd[,get('ratio')] + d1.mean[,get('ratio')]]
+    dt.eval[,tni := tni * d1.sd[,get('tni')] + d1.mean[,get('tni')]]
+    dt.eval[,tpi := tpi * d1.sd[,get('tpi')] + d1.mean[,get('tpi')]]
+    dt.eval[,ln_ap := exp((ln_ap * d1.mean[,get('ln_ap')]) + d1.sd[,get('ln_ap')])]
+    dt.eval[,ln_an := exp((ln_an * d1.mean[,get('ln_an')]) + d1.sd[,get('ln_an')])]
+    
+    
     hist(dt.pred$NUE_lm,xlim=c(0,100),n=150)
     quantile(dt.pred$NUE_lm,0.95)
     hist(dt.pred$NUE_xgboost,n=150)
-    quantile(dt.pred$NUE_xgboost,0.95)
+    quantile(dt.pred$NUE_xgboost,0.975)
     
     dt.pred[,groep := fifelse(NUE_xgboost>quantile(NUE_xgboost,0.95) | 
                               NUE_lm > quantile(NUE_lm,0.95),'top','rest')]

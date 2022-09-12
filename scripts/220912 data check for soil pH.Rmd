@@ -1,0 +1,239 @@
+---
+title: "Slope analysis for sol pH"
+author: "Xingjuan and Gerard"
+date: '2022-09-05'
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r loadpackage, include=FALSE, message=FALSE}
+
+  
+  library(corrplot);library(psych)
+
+  # load packages for vegan
+  library(vegan)
+
+  # load packages for use data.tables and statistical tests
+  require(data.table);require(mltools); library(agricolae)
+
+  # load packages for data inventory and plotting
+  require(DataExplorer);require(ggplot2);require(lattice)
+
+  # library for BRT
+  library(gbm)
+
+
+
+```
+
+```{r data making, include=TRUE}
+d1 <- readxl::read_xlsx('../data/220908 Data for 4 sites measured soil pH.xlsx')
+d1 <- as.data.table(d1)
+
+d1[, uid := .GRP, by =c('sitename','treatments')]
+
+
+# make a list to store the output
+out <- list()
+
+# run a linear model for each of the site-treatment combinations
+for(i in 1:max(d1$uid)){
+  
+  d2 <- d1[uid == i]
+  
+  # make a linear model
+  m1 <- lm(ph~year,data=d2)
+ 
+  # make a summary of that model
+  m1.sum <- summary(m1)
+  
+  # estimate the mean value of site properties and cation balance
+  cols <- c('n_sur','bc_sur','clay','cec', "bc_in","n_total" ,"n_output","bc_uptake")
+  
+  d2.mean <- d2[,lapply(.SD,mean),.SDcols = cols]
+  d2.cumsum <- d2[,lapply(.SD,function(x) max(cumsum(x))),.SDcols = c('n_sur','bc_sur')]
+ 
+  # d2.mean <- d2[year != min(year),lapply(.SD,mean),.SDcols = cols]
+  
+ # d2.cumsum <- d2[year != min(year),lapply(.SD,function(x) max(cumsum(x))),.SDcols = c('n_sur','bc_sur')]
+ 
+  colnames(d2.cumsum) <- c('n_acc','bc_acc')
+  filt <- nrow(d2)/2
+  d2.diff <- d2[,list(dph = mean(d2[1:filt,ph])-mean(d2[(filt+1):nrow(d2),ph]))]
+  
+  # retreive the relevant information
+  d2.out <- data.table(site = unique(d2$sitename)[1],
+                       treatment = unique(d2$treatments[1]),
+                       alfa = m1.sum$coefficients[2,1],
+                       alfa_sd = m1.sum$coefficients[2,2],
+                       pval = m1.sum$coefficients[2,4],
+                       ct1 = d2$ct[1],
+                       n_in = d2$n_total[1],
+                       n_up = d2$n_output[1],
+                       bc_in = d2$bc_in[1],
+                       bc_up = d2$bc_uptake[1],
+                       eq = paste0('y = ', round(m1.sum$coefficients[1,1],1),' ',round(m1.sum$coefficients[2,1],4),' x year')
+                       )
+  
+  # combine both
+  d2.out <- cbind(d2.out,d2.mean,d2.cumsum,d2.diff)
+  
+  # set col order
+  setcolorder(d2.out,c('site' ,'treatment','cec','clay','n_sur','bc_sur',"bc_in" , "n_in" , "n_up","bc_up",'n_acc','bc_acc'))
+
+  # save into one list  
+  out[[i]] <- copy(d2.out)
+  # show progress
+  print(i)
+}
+
+
+out <- rbindlist(out)
+
+# please write as csv
+fwrite(out,'220109 results of delta slope.csv')
+```
+
+
+
+```{r data check, include=TRUE}
+
+#  load input CSV  data GOT BEFORE
+  d3 <- fread('220109 results of delta slope.csv',dec=',')
+d4 <- as.data.table(d3)
+ names(d4)
+ str(d4)
+ 
+ # make columns with numbers also numeric
+  cols.num <- c( "cec","clay","n_sur","bc_sur","alfa","alfa_sd", "pval","eq","n_acc", "bc_acc", "dph")
+  d4[,c(cols.num) := lapply(.SD,as.numeric),.SDcols = cols.num]
+ plot_histogram(d4)
+
+# Check whether the variables in this table are normally distributed, if not normalize
+qqnorm(d4$alfa)
+
+qqnorm(d4$cec)
+
+qqnorm(d4$clay)
+
+qqnorm(d4$n_sur)
+
+qqnorm(d4$n_acc)
+
+qqnorm(d4$bc_sur)
+
+qqnorm(d4$bc_acc)
+
+qqnorm(d4$dph)
+```
+```{r basic figure ph_de vs year,echo=TRUE}
+# Make correlation plots with alfa vs the site properties (and add land use as color)
+
+ggplot(d4, aes(x = n_sur, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+ggplot(d4, aes(x = bc_sur, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = n_acc, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = bc_acc, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = clay, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = n_sur, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = cec, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+ggplot(d4, aes(x = dph, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ lm(alfa~n_sur+cec+bc_sur,data=d4)
+ summary(lm(alfa~n_sur+cec+bc_sur,data=d4))
+
+ m1 = lm(alfa~n_sur+cec+bc_sur,data=d4)
+ hist(m1$residuals)
+ plot(m1)
+#Hit <Return> to see next plot: 
+ d4
+ 
+ d4[,nbc_sur := n_sur - bc_sur]
+plot(alfa~nbc_sur,data=d4)
+plot(alfa~nbc_sur,data=d4,pch=16)
+plot(alfa~nbc_sur,data=d4,pch=16,cex=2)
+d4[,nbcr_sur := n_sur / bc_sur]
+plot(alfa~nbcr_sur,data=d4,pch=16,cex=2)
+plot(alfa~nbc_sur,data=d4,pch=16,cex=2)
+plot(alfa~bc_sur,data=d4,pch=16,cex=2)
+plot(alfa~cec,data=d4,pch=16,cex=2)
+plot(bc_sur~n_sur,data=d4,pch=16,cex=2)
+plot(nbcr_sur~n_sur,data=d4,pch=16,cex=2)
+
+```
+Try this: 
+dpH = a * landuse:Nsur + b * BCsurp + c * CEC
+dpH = a * landuse : (Nsur - BCsurp)
+dpH = a * landuse:NsurBCsurpratio + b * CEC
+
+fix by yourself a denitrification factor, related to the amount of N lost via leaching: For example 
+rice = 0.8
+others = 0.2
+dpH = a * (den_fr * Nsurp - BCsurp) + b * CEC 
+
+test this on alfa
+and test this also on all measurement points, dpH = pH - pH0
+
+plot dpH versus Nsp, BCsp, den_fr * Nsurp - BCsurp, 

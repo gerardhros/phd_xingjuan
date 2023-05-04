@@ -1,0 +1,294 @@
+---
+title: "20220916 keq nsur and bcsur"
+author: "Xingjuan"
+date: "9/16/2022"
+output:
+  word_document: default
+  html_document:
+    toc: yes
+    keep_md: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r loadpackage, include=FALSE, message=FALSE}
+
+  
+  library(corrplot);library(psych)
+
+  # load packages for vegan
+  library(vegan)
+
+  # load packages for use data.tables and statistical tests
+  require(data.table);require(mltools); library(agricolae);library("readxl")
+
+  # load packages for data inventory and plotting
+  require(DataExplorer);require(ggplot2);require(lattice)
+
+  # library for BRT
+  library(gbm)
+
+
+
+```
+
+```{r BUDGET CALCULATION, include=TRUE}
+
+
+# read in the input data
+d1 <- readxl::read_xlsx('../data/220916 Data for pH for 4 sites.xlsx')
+d1 <- as.data.table(d1)
+
+#Element uptake ， kg/ha/yr to eq/m2
+d1[,in_eq_n := n_in_total / 140]
+d1[,in_eq_k := k_in_total / 390.983]
+d1[,in_eq_ca := ca_in_total / 400.78 * 2]
+d1[,in_eq_na := na_o_in/ 229.89769]
+d1[,in_eq_mg := mg_o_in/ 243.05 * 2]
+d1[,in_eq_bc := bc_de_in + in_eq_k + in_eq_ca + in_eq_na + in_eq_mg]
+
+
+#Element uptake 
+# calculate  N  Uptake (eq / m2 / year)
+d1[,up_eq_n := n_output/ 140]
+
+# calculate Base Cation Uptake (eq / m2 / year)
+d1[,up_eq_k := k_output / 390.983]
+d1[,up_eq_ca := ca_output / 400.78 * 2]
+d1[,up_eq_mg := mg_output / 243.05 * 2]
+d1[,up_eq_na := na_output / 229.89769]
+d1[,up_eq_bc := up_eq_k + up_eq_ca + up_eq_na + up_eq_mg]
+
+#Element budget
+
+d1[,bc_sur := in_eq_bc - up_eq_bc]
+d1[,n_sur := in_eq_n - up_eq_n]
+
+
+#fwrite(d1,'220916 soil ph output for 4 sites.csv')
+
+```
+# make alfa data file
+
+```{r data making, include=TRUE}
+
+d2 <- readxl::read_xlsx('../data/220916 Data for pH for 4 sites.xlsx')
+d2 <- as.data.table(d2)
+
+d2[, uid := .GRP, by =c('sitename','treatments')]
+
+
+# make a list to store the output
+out <- list()
+
+# run a linear model for each of the site-treatment combinations
+for(i in 1:max(d2$uid)){
+  
+  d3 <- d2[uid == i]
+  
+  # make a linear model
+  m1 <- lm(ph~year,data=d3)
+ 
+  # make a summary of that model
+  m1.sum <- summary(m1)
+  
+  # estimate the mean value of site properties and cation balance
+  cols <- c('n_sur','bc_sur','clay','cec', "in_eq_bc","up_eq_bc" ,"in_eq_n","up_eq_n")
+
+  d3.mean <- d3[,lapply(.SD,mean),.SDcols = cols]
+  d3.cumsum <- d3[,lapply(.SD,function(x) max(cumsum(x))),.SDcols = c('n_sur','bc_sur')]
+ # d2.mean <- d2[year != min(year),lapply(.SD,mean),.SDcols = cols]
+  
+ # d2.cumsum <- d2[year != min(year),lapply(.SD,function(x) max(cumsum(x))),.SDcols = c('n_sur','bc_sur')]
+ 
+  colnames(d3.cumsum) <- c('n_acc','bc_acc')
+  filt <- nrow(d3)/2
+  d3.diff <- d3[,list(dph = mean(d3[1:filt,ph])-mean(d3[(filt+1):nrow(d3),ph]))]
+  
+  # retreive the relevant information
+  d3.out <- data.table(site = unique(d3$sitename)[1],
+                       treatment = unique(d3$treatments[1]),
+                       alfa = m1.sum$coefficients[2,1],
+                       alfa_sd = m1.sum$coefficients[2,2],
+                       pval = m1.sum$coefficients[2,4],
+                       ct1 = d3$ct[1],
+                       n_in = d3$in_eq_n[1],
+                       n_up = d3$up_eq_n[1],
+                       bc_input = d3$in_eq_bc[1],
+                       bc_up = d3$up_eq_bc[1],
+                       eq = paste0('y = ', round(m1.sum$coefficients[1,1],1),' ',round(m1.sum$coefficients[2,1],4),' x year')
+                       )
+  
+  # combine both
+  d3.out <- cbind(d3.out,d3.mean,d3.cumsum,d3.diff)
+  
+  # set col order
+  setcolorder(d3.out,c('site' ,'treatment','cec','clay','n_sur','bc_sur', "in_eq_bc","up_eq_bc" ,"in_eq_n","up_eq_n",'n_acc','bc_acc'))
+
+  # save into one list  
+  out[[i]] <- copy(d3.out)
+  # show progress
+  print(i)
+}
+
+
+out <- rbindlist(out)
+
+# please write as csv
+fwrite(out,'220916 results of delta slope.csv')
+```
+```{r data check, include=TRUE}
+
+#  load input CSV  data GOT BEFORE
+  d4<- fread('220916 results of delta slope.csv',dec=',')
+d4 <- as.data.table(d4)
+ names(d4)
+ str(d4)
+ 
+ # make columns with numbers also numeric
+  cols.num <- c( "cec","clay","n_sur","bc_sur","alfa","alfa_sd", "pval","n_acc", "bc_acc", "dph")
+  d4[,c(cols.num) := lapply(.SD,as.numeric),.SDcols = cols.num]
+ plot_histogram(d4)
+
+# Check whether the variables in this table are normally distributed, if not normalize
+qqnorm(d4$alfa)
+
+qqnorm(d4$cec)
+
+qqnorm(d4$clay)
+
+qqnorm(d4$n_sur)
+
+qqnorm(d4$n_acc)
+
+qqnorm(d4$bc_sur)
+
+qqnorm(d4$bc_acc)
+
+qqnorm(d4$dph)
+```
+```{r basic figure ph_de vs year,echo=TRUE}
+# Make correlation plots with alfa vs the site properties (and add land use as color)
+
+ggplot(d4, aes(x = n_sur, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+ggplot(d4, aes(x = bc_sur, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = n_acc, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = bc_acc, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = clay, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = n_sur, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ggplot(d4, aes(x = cec, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+ggplot(d4, aes(x = dph, y = alfa, colour = ct1)) +
+  # 散点图
+  geom_point() +
+  # 标尺函数：palette设置配色方案
+  scale_colour_brewer(palette = "Set1") +
+  # 拟合回归线段以及置信域(默认0.95/通过level参数可自定义)
+  geom_smooth(method = lm)# method = lm
+
+
+ 
+ 
+ d4[,nbc_sur := n_sur - bc_sur]
+plot(alfa~bc_sur,data=d4,pch=16,cex=2)
+plot(alfa~n_sur,data=d4,pch=16,cex=2)
+plot(alfa~cec,data=d4,pch=16,cex=2)
+plot(alfa~nbc_sur,data=d4,pch=16,cex=2)
+
+d4[,nbcr_sur := n_sur / bc_sur]
+plot(alfa~nbcr_sur,data=d4,pch=16,cex=2)
+
+
+plot(nbcr_sur~n_sur,data=d4,pch=16,cex=2)
+plot(nbcr_sur~bc_sur,data=d4,pch=16,cex=2)
+
+plot(bc_sur~n_sur,data=d4,pch=16,cex=2)
+
+
+
+lm1 <- lm(alfa~ct1+n_sur+cec+bc_sur,data=d4)
+summary(lm1)
+
+lm6 <- lm(alfa~ct1:n_sur:bc_sur:cec,data=d4)
+summary(lm6)
+
+lm3 <- lm(alfa~ct1:n_sur + bc_sur + cec ,data=d4)
+summary(lm3)
+
+lm4 <- lm(alfa~ct1 : nbc_sur + cec,data=d4)
+summary(lm4)
+
+lm5 <- lm(alfa~ ct1:nbcr_sur +  cec,data=d4)
+
+summary(lm5)
+
+ 
+ hist(lm1$residuals)
+ plot(lm1)
+ 
+ hist(lm3$residuals)
+ plot(lm3)
+ 
+ hist(lm5$residuals)
+ plot(lm5)
+ 
+
+```
